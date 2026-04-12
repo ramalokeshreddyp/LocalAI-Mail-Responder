@@ -1,0 +1,192 @@
+{
+  "name": "Local AI Email Auto-Responder",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "mailbox": "INBOX",
+        "options": {
+          "allowUnauthorizedCerts": false,
+          "forceReconnect": false
+        }
+      },
+      "id": "f1a2b3c4-d5e6-7890-abcd-ef1234567890",
+      "name": "Email Read (IMAP)",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "credentials": {
+        "imap": {
+          "id": "imap_cred_1",
+          "name": "IMAP Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-loop-sender",
+              "leftValue": "={{ $json.from.address }}",
+              "rightValue": "={{ $vars.SMTP_USER }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "cond-loop-subject",
+              "leftValue": "={{ $json.subject }}",
+              "rightValue": "Re: AI Auto-Reply:",
+              "operator": {
+                "type": "string",
+                "operation": "notStartsWith"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true
+      },
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567891",
+      "name": "Loop Prevention",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/generate",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"model\": \"llama3:8b\",\n  \"stream\": false,\n  \"prompt\": \"You are a professional and helpful email assistant. A new email has arrived. Please write a concise, relevant, and polite reply.\\n\\nSender: {{ $json.from.address }}\\nSubject: {{ $json.subject }}\\nBody:\\n{{ $json.text }}\\n\\nIMPORTANT: Provide ONLY the reply body text. Do not include any greeting like 'Dear...', signature, or any meta-commentary. Start directly with the reply content.\"\n}",
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678902",
+      "name": "Generate Reply with Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 220]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $vars.SMTP_USER }}",
+        "toEmail": "={{ $('Email Read (IMAP)').item.json.from.address }}",
+        "subject": "=Re: AI Auto-Reply: {{ $('Email Read (IMAP)').item.json.subject }}",
+        "text": "={{ $json.response }}",
+        "options": {
+          "allowUnauthorizedCerts": false,
+          "appendAttribution": false,
+          "replyTo": "={{ $vars.SMTP_USER }}",
+          "messageId": "={{ $('Email Read (IMAP)').item.json.messageId }}"
+        }
+      },
+      "id": "c3d4e5f6-a7b8-9012-cdef-012345678903",
+      "name": "Send Reply Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [900, 220],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred_1",
+          "name": "SMTP Account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "d4e5f6a7-b8c9-0123-defa-123456789014",
+      "name": "Stop - Loop Detected",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [680, 400]
+    }
+  ],
+  "connections": {
+    "Email Read (IMAP)": {
+      "main": [
+        [
+          {
+            "node": "Loop Prevention",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Prevention": {
+      "main": [
+        [
+          {
+            "node": "Generate Reply with Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop - Loop Detected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Reply with Ollama": {
+      "main": [
+        [
+          {
+            "node": "Send Reply Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2026-04-12T00:00:00.000Z",
+      "updatedAt": "2026-04-12T00:00:00.000Z",
+      "id": "tag-local-ai",
+      "name": "local-ai"
+    },
+    {
+      "createdAt": "2026-04-12T00:00:00.000Z",
+      "updatedAt": "2026-04-12T00:00:00.000Z",
+      "id": "tag-email",
+      "name": "email-automation"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2026-04-12T00:00:00.000Z",
+  "versionId": "1a2b3c4d-e5f6-7890-abcd-ef1234567890"
+}
