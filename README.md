@@ -1,333 +1,258 @@
-# 🤖 Local AI Email Auto-Responder
+# Local AI Email Auto-Responder
 
-> A fully private, cost-free AI email auto-responder powered by **n8n** and **Ollama** — no cloud APIs, no data leaks, no subscriptions.
+![Project Banner](https://img.shields.io/badge/Local%20AI-Email%20Auto--Responder-0b7285?style=for-the-badge)
+![n8n](https://img.shields.io/badge/n8n-Automation%20Engine-ea4b71?style=for-the-badge)
+![Ollama](https://img.shields.io/badge/Ollama-Local%20LLM-1f9d55?style=for-the-badge)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ed?style=for-the-badge)
 
-[![Docker](https://img.shields.io/badge/Docker-Compose-blue?logo=docker)](https://www.docker.com/)
-[![n8n](https://img.shields.io/badge/n8n-Workflow%20Automation-orange?logo=n8n)](https://n8n.io/)
-[![Ollama](https://img.shields.io/badge/Ollama-Local%20LLM-green)](https://ollama.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+## Project Overview
 
----
+This project implements a fully local, privacy-first AI email auto-responder using n8n for orchestration and Ollama for on-device LLM inference.
 
-## 📖 Overview
+When a new email arrives, the workflow:
 
-This project builds an intelligent email auto-responder that runs **entirely on your local machine**. When a new email arrives in your inbox, the system:
+1. Reads the email using IMAP.
+2. Applies loop-prevention rules.
+3. Sends a dynamic prompt to a local model (`llama3:8b`) via Ollama.
+4. Sends a threaded reply over SMTP.
 
-1. **Detects** the incoming email via IMAP polling
-2. **Prevents loops** — skips emails from itself or already auto-replied threads
-3. **Generates** a contextually relevant reply using a local LLM (Llama 3 8B via Ollama)
-4. **Sends** the reply via SMTP, correctly threaded using the original `Message-ID`
+No cloud AI API is used for generation. Prompt and response stay on local infrastructure.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Docker Network                          │
-│                                                                 │
-│  ┌──────────────────────────┐    ┌──────────────────────────┐   │
-│  │       n8n Container      │    │     Ollama Container     │   │
-│  │                          │    │                          │   │
-│  │  [IMAP Trigger]          │    │  llama3:8b model         │   │
-│  │       ↓                  │    │                          │   │
-│  │  [Loop Prevention IF]    │    │  REST API:               │   │
-│  │       ↓ (pass)           │───▶│  POST /api/generate      │   │
-│  │  [HTTP Request]          │◀───│                          │   │
-│  │       ↓                  │    └──────────────────────────┘   │
-│  │  [Send Email SMTP]       │                                   │
-│  └──────────────────────────┘                                   │
-└─────────────────────────────────────────────────────────────────┘
-        ↑ read emails                         ↓ send reply
-   ┌────────────────────────────────────────────────────┐
-   │                   Email Server                      │
-   │            (Gmail / Outlook / Custom)               │
-   └────────────────────────────────────────────────────┘
-```
+## Key Features
 
-### Why Local AI?
+- Local inference with Ollama (`llama3:8b`)
+- Visual automation using n8n workflow nodes
+- Email thread continuity using Message-ID reply mapping
+- Loop prevention to avoid self-reply storms
+- Dockerized deployment with health checks and persistent volumes
+- Clear submission-ready artifacts for evaluation
 
-| Feature | This Project | Cloud API |
+## Tech Stack
+
+| Layer | Technology | Why It Was Chosen |
 |---|---|---|
-| 🔒 Privacy | ✅ Data never leaves your machine | ❌ Sent to third-party servers |
-| 💰 Cost | ✅ Free (hardware only) | ❌ Pay per token |
-| 🌐 Internet | ✅ Works offline | ❌ Requires connectivity |
-| 🎛️ Control | ✅ Full model & prompt control | ❌ Subject to provider limits |
+| Orchestration | n8n | Visual, maintainable automation and strong email node ecosystem |
+| LLM Runtime | Ollama | Easy local model hosting with simple HTTP API |
+| Model | llama3:8b | Good quality-to-resource tradeoff for email drafting |
+| Containerization | Docker + Docker Compose | Reproducible local setup with service networking |
+| Protocols | IMAP / SMTP / HTTP | Standard email retrieval, sending, and model invocation |
 
----
+## Code Structure and Folder Organization
 
-## 🏗️ Architecture
-
-### Services
-
-| Service | Image | Port | Purpose |
-|---|---|---|---|
-| `n8n` | `n8nio/n8n:latest` | `5678` | Workflow automation engine |
-| `ollama` | `ollama/ollama:latest` | *(internal)* | Local LLM inference server |
-| `ollama-init` | `ollama/ollama:latest` | — | One-time model pull on startup |
-
-### n8n Workflow Nodes
-
-```
-Email Read (IMAP)
-      │
-      ▼
-Loop Prevention (IF)
-   ├─ TRUE → Generate Reply with Ollama (HTTP POST)
-   │               │
-   │               ▼
-   │         Send Reply Email (SMTP)
-   │
-   └─ FALSE → Stop - Loop Detected (NoOp)
+```text
+GPP-5/
+├── .env                     # Local environment values (not for commit)
+├── .env.example             # Required environment variables template
+├── .gitignore               # Git exclusions
+├── docker-compose.yml       # n8n + Ollama + model init services
+├── workflow.json            # Exported n8n workflow
+├── workflow_with_id.json    # Workflow variant including explicit workflow id
+├── submission.json          # Evaluator credential schema file
+├── README.md                # Project overview and usage guide
+├── architecture.md          # System architecture and component design
+└── projectdocumentation.md  # Full technical documentation
 ```
 
----
+## System Architecture
 
-## 🚀 Getting Started
+```mermaid
+flowchart LR
+    U[External Sender] --> ES[(Email Server)]
+    ES -->|IMAP Poll| N8N[n8n Workflow Engine]
+    N8N -->|HTTP POST /api/generate| OLLAMA[Ollama Service]
+    OLLAMA -->|JSON response| N8N
+    N8N -->|SMTP reply with messageId threading| ES
+    ES --> U
+
+    subgraph Docker Network: ai_responder_net
+      N8N
+      OLLAMA
+    end
+
+    subgraph Persistent Storage
+      V1[(n8n_data)]
+      V2[(ollama_data)]
+    end
+
+    N8N --- V1
+    OLLAMA --- V2
+```
+
+## Workflow Explanation
+
+The workflow in [workflow.json](workflow.json) is intentionally simple and auditable:
+
+1. `Email Read (IMAP)` trigger reads unread messages from INBOX.
+2. `Loop Prevention` IF node checks:
+   - sender is not the responder address
+   - subject does not start with `Re: AI Auto-Reply:`
+3. `Generate Reply with Ollama` sends a dynamic prompt including sender, subject, and email body.
+4. `Send Reply Email` returns model output to original sender and uses original Message-ID for threading.
+5. Loop-detected branch ends in `Stop - Loop Detected` (`NoOp`).
+
+### n8n Node Execution Flow
+
+```mermaid
+flowchart TD
+    A[Email Read IMAP] --> B{Loop Prevention IF}
+    B -->|true| C[HTTP Request to Ollama]
+    C --> D[Send Email SMTP]
+    B -->|false| E[Stop NoOp]
+```
+
+### Prompt Construction Flow
+
+```mermaid
+flowchart LR
+    I1[From Address] --> P[Prompt Template]
+    I2[Subject] --> P
+    I3[Body Text] --> P
+    P --> H[HTTP JSON Payload]
+    H --> O[Ollama generate]
+    O --> R[response field]
+    R --> S[SMTP Email Body]
+```
+
+### Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant Sender
+    participant MailServer as Email Server
+    participant N8N as n8n
+    participant Ollama as Ollama
+
+    Sender->>MailServer: Send incoming email
+    N8N->>MailServer: Poll IMAP INBOX
+    MailServer-->>N8N: New unread message
+    N8N->>N8N: Loop prevention check
+    alt Message allowed
+        N8N->>Ollama: POST /api/generate (prompt)
+        Ollama-->>N8N: { response: "..." }
+        N8N->>MailServer: SMTP reply (Message-ID threaded)
+        MailServer-->>Sender: Deliver auto-reply
+    else Loop detected
+        N8N->>N8N: Stop execution (NoOp)
+    end
+```
+
+## Local Setup and Installation
 
 ### Prerequisites
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (includes Docker Compose)
-- An email account with IMAP/SMTP access enabled
-- At least **8 GB RAM** available for Docker (16 GB recommended for llama3:8b)
-- At least **5 GB free disk space** for the LLM model
+- Docker Desktop (Compose v2)
+- Internet access for first model pull
+- IMAP + SMTP capable email account
 
-> **Gmail Users**: Enable "2-Step Verification" and generate an [App Password](https://myaccount.google.com/apppasswords) to use instead of your regular password. Set IMAP access to "Enabled" in Gmail settings.
+### Step 1: Configure Environment
 
----
-
-### Step 1: Clone the Repository
-
-```bash
-git clone https://github.com/ramalokeshreddyp/LocalAI-Mail-Responder.git
-cd LocalAI-Mail-Responder
+```powershell
+Copy-Item .env.example .env
 ```
 
-### Step 2: Configure Environment Variables
+Update `.env` with valid values:
 
-Copy the example environment file and fill in your credentials:
+- `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASS`
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`
+- `N8N_HOST`, `N8N_PORT`, `N8N_PROTOCOL`, `WEBHOOK_URL`
 
-```bash
-cp .env.example .env
+### Step 2: Start Services
+
+```powershell
+docker compose up -d --build
 ```
 
-Open `.env` in your editor and set the following values:
+### Step 3: Verify Health
 
-```env
-# n8n Settings
-N8N_HOST=localhost
-N8N_PORT=5678
-N8N_PROTOCOL=http
-WEBHOOK_URL=http://localhost:5678/
-
-# Incoming Email (IMAP)
-IMAP_HOST=imap.gmail.com        # Your IMAP server
-IMAP_PORT=993                   # 993 for SSL
-IMAP_USER=you@gmail.com         # Your email address
-IMAP_PASS=your-app-password     # Gmail App Password (not your regular password)
-
-# Outgoing Email (SMTP)
-SMTP_HOST=smtp.gmail.com        # Your SMTP server
-SMTP_PORT=587                   # 587 for STARTTLS
-SMTP_USER=you@gmail.com         # Your email address (same as IMAP_USER)
-SMTP_PASS=your-app-password     # Same App Password as above
+```powershell
+docker compose ps
+docker exec ollama_responder ollama list
+Invoke-RestMethod -Uri http://localhost:11434/api/tags -Method Get
+Invoke-WebRequest -Uri http://localhost:5678/healthz -UseBasicParsing
 ```
 
-> ⚠️ **Security**: Add `.env` to your `.gitignore` file. Never commit real credentials.
+### Step 4: Import Workflow into n8n
 
-### Step 3: Start the Services
+1. Open `http://localhost:5678`
+2. Import [workflow.json](workflow.json)
+3. Bind IMAP and SMTP credentials in n8n
+4. Activate workflow
 
-```bash
-docker-compose up -d
-```
+## Usage Instructions
 
-This command will:
-- Pull the `n8nio/n8n` and `ollama/ollama` Docker images
-- Start both containers in the background
-- Automatically pull the **llama3:8b** model via the `ollama-init` service
+1. Send an email from a different account to the configured IMAP address.
+2. Wait for polling interval (every minute).
+3. Open n8n Executions and inspect node outputs.
+4. Confirm generated reply is received and threaded in same conversation.
+5. Send a self-email to verify loop prevention branch.
 
-Check that all containers are running and healthy:
+## Validation and Testing Strategy
 
-```bash
-docker-compose ps
-```
+### Functional Checks
 
-Wait ~2-3 minutes for the model to download (it's ~4.7 GB). Monitor progress:
+- Compose config validity: `docker compose config`
+- Container health: `docker compose ps`
+- Model presence: `ollama list`
+- Ollama generation test: `POST /api/generate` with test prompt
+- n8n endpoint: `/healthz` returns 200
+- Workflow contract checks:
+  - Trigger node type is IMAP
+  - HTTP node method is POST to `http://ollama:11434/api/generate`
+  - Prompt contains dynamic subject/body references
+  - SMTP node sends to original sender
+  - Message-ID threading is set
+  - IF node routes true path to Ollama
 
-```bash
-docker-compose logs -f ollama-init
-```
+### E2E Validation
 
-### Step 4: Verify the LLM Model
+Use real credentials in `.env` and [submission.json](submission.json), then validate:
 
-Confirm the model is available:
+- Incoming email triggers execution
+- Ollama returns model text
+- SMTP sends threaded reply
+- Loop prevention blocks self/reply-chain loops
 
-```bash
+## Performance and Scalability Notes
+
+- Main bottleneck is model inference latency.
+- For higher volume:
+  - use smaller/faster models or GPU-backed inference
+  - run n8n in queue mode with workers
+  - throttle and batch SMTP operations
+  - add retry/backoff and dead-letter patterns
+
+## Troubleshooting
+
+### Ollama connection error from n8n
+
+- Ensure URL uses service name, not localhost inside workflow: `http://ollama:11434/api/generate`
+- Confirm both services share `ai_responder_net`
+
+### Model not found
+
+```powershell
+docker exec -it ollama_responder ollama pull llama3:8b
 docker exec ollama_responder ollama list
 ```
 
-You should see `llama3:8b` listed. You can also test the API directly:
+### Email auth failures
 
-```bash
-curl http://localhost:11434/api/tags
-```
+- Verify IMAP/SMTP host, port, and auth mode
+- Use app password where provider requires it
 
-### Step 5: Import the Workflow into n8n
+## Production Readiness Checklist
 
-1. Open your browser and navigate to **http://localhost:5678**
-2. Complete the n8n first-run setup (create an owner account)
-3. Go to **Workflows** → Click **Import from File**
-4. Select the `workflow.json` file from the project root
-5. The workflow will open in the editor
+- [x] Health checks on n8n and Ollama
+- [x] Persistent volumes for workflows and models
+- [x] Loop prevention implemented
+- [x] Threaded replies implemented
+- [x] Prompt generated from dynamic email context
+- [x] Local-first AI inference
+- [ ] Add dedicated n8n error workflow
+- [ ] Add retry/backoff in workflow nodes
+- [ ] Add observability dashboards and alerts
 
-### Step 6: Configure Credentials in n8n
+## Related Documents
 
-After importing, you need to link the email credentials:
-
-**IMAP Credential:**
-1. Click on the **Email Read (IMAP)** node
-2. Click on the **Credential** selector → **Create New**
-3. Fill in Host, Port (993), User, Password — check **SSL/TLS**
-4. Click **Save**
-
-**SMTP Credential:**
-1. Click on the **Send Reply Email** node
-2. Click on the **Credential** selector → **Create New**
-3. Fill in Host, Port (587), User, Password — check **STARTTLS**
-4. Click **Save**
-
-### Step 7: Activate the Workflow
-
-1. In the workflow editor, toggle the **Active** switch (top right) to **ON**
-2. The workflow is now live and will poll your INBOX every minute
-
----
-
-## 🧪 Testing
-
-### End-to-End Test
-
-1. From a **different email account**, send an email to your configured IMAP address:
-   - Subject: `Test - Please advise on scheduling a meeting`
-   - Body: `Hi, I'd like to schedule a 30-minute meeting next week. What times work for you?`
-
-2. In n8n, navigate to **Executions** (left sidebar) — you should see a new execution appear within ~1 minute.
-
-3. Click the execution to inspect the data flow through each node.
-
-4. Check the sending account's inbox — you should receive a threaded AI-generated reply.
-
-### Loop Prevention Test
-
-Send an email **from your auto-responder's own address** to itself. Confirm that:
-- The workflow triggers
-- Execution stops at the **Loop Prevention** node (false branch → Stop)
-- No reply is sent
-
-### Verify Email Threading
-
-The reply should appear in the **same conversation thread** as your original email in your email client (Gmail, Outlook, etc.). This works because the workflow sets the `In-Reply-To` header using the original `Message-ID`.
-
----
-
-## 🔧 Troubleshooting
-
-### n8n can't connect to Ollama
-
-**Symptom**: HTTP Request node fails with "Connection refused" or "Network Error"
-
-**Fix**: Ensure both containers are on the same Docker network. The URL must be `http://ollama:11434/api/generate` (using the service name `ollama`, not `localhost`).
-
-```bash
-docker network inspect ai_responder_net
-# Both n8n_responder and ollama_responder should appear in "Containers"
-```
-
-### Model not found error
-
-**Symptom**: Ollama API returns `{"error":"model 'llama3:8b' not found"}`
-
-**Fix**: Manually pull the model:
-
-```bash
-docker exec -it ollama_responder ollama pull llama3:8b
-docker exec ollama_responder ollama list   # Verify it appears
-```
-
-### IMAP/SMTP connection fails
-
-**Symptom**: Email nodes show authentication or SSL errors
-
-**Fix**:
-- For Gmail: Use an [App Password](https://myaccount.google.com/apppasswords), not your regular password
-- Verify IMAP is enabled in Gmail: Settings → See all settings → Forwarding and POP/IMAP → Enable IMAP
-- Double-check port numbers: IMAP=993 (SSL), SMTP=587 (STARTTLS) or 465 (SSL)
-
-### Response quality is poor
-
-**Fix**: The prompt in the HTTP Request node drives response quality. Edit the `Generate Reply with Ollama` node's body to refine the prompt. Use clear persona instructions ("You are a professional assistant"), context, and output format constraints.
-
-### Low memory / Container crashes
-
-**Fix**: llama3:8b requires ~8 GB RAM. You can try a smaller model:
-
-```bash
-docker exec -it ollama_responder ollama pull phi3:mini
-```
-
-Then update the `"model"` field in the HTTP Request node body from `"llama3:8b"` to `"phi3:mini"`.
-
----
-
-## 📁 Project Structure
-
-```
-LocalAI-Mail-Responder/
-├── docker-compose.yml    # Service definitions (n8n, ollama, ollama-init)
-├── .env.example          # Template for environment variables
-├── .env                  # Your local credentials (DO NOT COMMIT)
-├── workflow.json         # Exported n8n workflow
-├── submission.json       # Test credentials schema for evaluation
-└── README.md             # This file
-```
-
----
-
-## 🔐 Security Notes
-
-- The `.env` file contains sensitive credentials — **never commit it** to version control
-- Add `.gitignore` entry: `echo ".env" >> .gitignore`
-- For production use, consider using Docker secrets or a dedicated secrets manager
-- The Ollama service is not exposed publicly (no host port mapping) — it's only accessible within the Docker network
-- n8n credential storage is encrypted at rest
-
----
-
-## 🛠️ Stopping the Services
-
-```bash
-# Stop containers (preserves data)
-docker-compose stop
-
-# Stop and remove containers (preserves volumes/data)
-docker-compose down
-
-# Full cleanup including named volumes (WARNING: deletes all n8n workflows and models)
-docker-compose down -v
-```
-
----
-
-## 📚 Resources
-
-- [n8n Documentation](https://docs.n8n.io/)
-- [Ollama Model Library](https://ollama.com/library)
-- [Llama 3 on Ollama](https://ollama.com/library/llama3)
-- [Docker Compose Reference](https://docs.docker.com/compose/)
-- [n8n Email Read (IMAP) Node](https://docs.n8n.io/integrations/builtin/trigger-nodes/n8n-nodes-base.emailreadimap/)
-
----
-
-## 📄 License
-
-MIT License — see [LICENSE](LICENSE) for details.
-
----
-
-*Built as a hands-on demonstration of privacy-preserving AI automation using open-source tools.*
+- [architecture.md](architecture.md)
+- [projectdocumentation.md](projectdocumentation.md)
