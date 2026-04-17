@@ -72,7 +72,22 @@
         "url": "http://ollama:11434/api/generate",
         "sendBody": true,
         "contentType": "json",
-        "body": "={\n  \"model\": \"llama3:8b\",\n  \"stream\": false,\n  \"prompt\": \"You are a professional and helpful email assistant. A new email has arrived. Please write a concise, relevant, and polite reply.\\n\\nSender: {{ $json.from.address }}\\nSubject: {{ $json.subject }}\\nBody:\\n{{ $json.text }}\\n\\nIMPORTANT: Provide ONLY the reply body text. Do not include any greeting like 'Dear...', signature, or any meta-commentary. Start directly with the reply content.\"\n}",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "llama3:8b"
+            },
+            {
+              "name": "stream",
+              "value": false
+            },
+            {
+              "name": "prompt",
+              "value": "=You are a professional and helpful email assistant. A new email has arrived. Please write a concise, relevant, and polite reply.\n\nSender: {{ $('Email Read (IMAP)').item.json.from.address }}\nSubject: {{ $('Email Read (IMAP)').item.json.subject }}\nBody:\n{{ $('Email Read (IMAP)').item.json.text }}\n\nIMPORTANT: Provide ONLY the reply body text. Do not include any greeting like 'Dear...', signature, or any meta-commentary. Start directly with the reply content."
+            }
+          ]
+        },
         "options": {
           "timeout": 120000,
           "response": {
@@ -93,7 +108,7 @@
         "fromEmail": "={{ $vars.SMTP_USER }}",
         "toEmail": "={{ $('Email Read (IMAP)').item.json.from.address }}",
         "subject": "=Re: AI Auto-Reply: {{ $('Email Read (IMAP)').item.json.subject }}",
-        "text": "={{ $json.response }}",
+        "text": "={{ $('Generate Reply with Ollama').item.json.response }}",
         "options": {
           "allowUnauthorizedCerts": false,
           "appendAttribution": false,
